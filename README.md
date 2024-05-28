@@ -22,8 +22,8 @@ This is a Discord bot designed to utilize Google's Generative AI (Gemini 1.5-Fla
 1. **Clone the repository:**
 
     ```sh
-    git clone https://github.com/your-username/discord-conversational-ai-bot.git
-    cd discord-conversational-ai-bot
+    git clone https://github.com/hihumanzone/Gem2.git
+    cd Gem2
     ```
 
 2. **Install dependencies:**
