@@ -125,7 +125,7 @@ client.on('messageCreate', async message => {
 
             const serverName = message.guild.name;
             
-            const systemInstructions = `You are an AI known as ${client.user.displayName}. You are currently engaging with users in the ${serverName} Discord server. You will receive messages in the following format: "[User's message in the ChannelName channel]:". When responding, you do not need to follow this format. Avoid using emojis in your responses. You are mainly built as a conversational AI, but you can do other things as well. Be understanding, build friendships, and play along.\n\n## User Information\nUsername: \`${userInfo.username}\`\nDisplay Name: \`${userInfo.displayName}\`\nServer Nickname: \`${userInfo.serverNickname || 'Not set'}\`\nStatus: \`${userInfo.status}\`\n\n## General Information:\nUTC Date And Time: \`${utc}\``
+            const systemInstructions = `You are an AI known as ${client.user.displayName}. You are currently engaging with users in the ${serverName} Discord server. You will receive messages in the following format: "[Time: \`User\`'s message in the ChannelName channel]:". When responding, you do not need to follow this format. Avoid using emojis in your responses. You can mention users or redirect to channels by using '@username' or '#channelname'. You have the ability to see images and read text-based or PDF documents. You are mainly built as a conversational AI, but you can do other things as well. Be understanding, build friendships, and play along.\n\n## User Information\nUsername: \`${userInfo.username}\`\nDisplay Name: \`${userInfo.displayName}\`\nServer Nickname: \`${userInfo.serverNickname || 'Not set'}\`\nStatus: \`${userInfo.status}\``;
 
             const model = genAI.getGenerativeModel({
               model: 'gemini-1.5-flash',
@@ -140,18 +140,23 @@ client.on('messageCreate', async message => {
             });
             const chat = model.startChat({ history: history });
 
-            let prompt = message.content
+            let prompt = message.content;
+
+            // Escape regex special characters before creating a new RegExp
+            const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
             message.guild.members.cache.forEach(member => {
-              prompt = prompt.replace(new RegExp(`<@!?${member.id}>`, 'g'), `"@${member.displayName}"`);
+              const displayNameEscaped = escapeRegex(member.displayName);
+              prompt = prompt.replace(new RegExp(`<@!?${member.id}>`, 'g'), `"@${displayNameEscaped}"`);
             });
 
             message.guild.channels.cache.forEach(channel => {
-              prompt = prompt.replace(new RegExp(`<#${channel.id}>`, 'g'), `"#${channel.name}"`);
+              const channelNameEscaped = escapeRegex(channel.name);
+              prompt = prompt.replace(new RegExp(`<#${channel.id}>`, 'g'), `"#${channelNameEscaped}"`);
             });
 
             const channelName = message.channel.name;
-            prompt = `[${userInfo.displayName}'s Message In #${channelName} Channel]: ${prompt}`;
+            prompt = `[\`${utc}\` :\`${userInfo.displayName}\`'s Message In #${channelName} Channel]: ${prompt}`;
             prompt = await extractText(message, prompt);
             let parts = [{ "text": prompt }];
 
@@ -174,15 +179,17 @@ client.on('messageCreate', async message => {
             }
 
             const result = await chat.sendMessage(parts);
-            const response = await result.response;
+            const response = await result.response();
             let text = response.text();
 
             message.guild.members.cache.forEach(member => {
-              text = text.replace(new RegExp(`@${member.displayName}`, 'g'), `<@${member.id}>`);
+              const displayNameEscaped = escapeRegex(member.displayName);
+              text = text.replace(new RegExp(`@${displayNameEscaped}`, 'g'), `<@${member.id}>`);
             });
 
             message.guild.channels.cache.forEach(channel => {
-              text = text.replace(new RegExp(`#${channel.name}`, 'g'), `<#${channel.id}>`);
+              const channelNameEscaped = escapeRegex(channel.name);
+              text = text.replace(new RegExp(`#${channelNameEscaped}`, 'g'), `<#${channel.id}>`);
             });
 
             console.log(`\n${prompt}\nBot response: ${text}\n`);
@@ -279,7 +286,6 @@ async function sendTextInChunks(text, message) {
     if (end > text.length) {
       end = text.length;
     } else {
-      // Ensure to split at a word boundary
       while (end > offset && !/\s/.test(text[end])) {
         end--;
       }
