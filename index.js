@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, AttachmentBuilder, InteractionType } = require('discord.js');
+const { Client, GatewayIntentBits, AttachmentBuilder, InteractionType, EmbedBuilder } = require('discord.js');
 require('dotenv').config();
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fetch = require('node-fetch');
