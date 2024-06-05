@@ -143,7 +143,11 @@ client.on('interactionCreate', async interaction => {
           files: [imageAttachment]
         });
         const messageLink = `https://discord.com/channels/${interaction.guildId ? interaction.guildId : '@me'}/${interaction.channelId}/${imageMessage.id}`;
-        await interaction.editReply({ content: `\`✅\`› Image generation successful! ${messageLink}`, embeds: [] });
+        const successfulEmbed = new EmbedBuilder()
+          .setColor(0x36393F)
+          .setDescription(`\`✅\`› Image generation successful! ${messageLink}`)
+          .setTimestamp();
+        await interaction.editReply({ embeds: [successfulEmbed] });
       } catch (error) {
         console.error(error);
         const errorEmbed = new EmbedBuilder()
