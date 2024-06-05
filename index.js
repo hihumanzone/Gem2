@@ -116,7 +116,7 @@ client.on('interactionCreate', async interaction => {
       } catch (error) {
         console.error(error);
       }
-    } else if (commandName === 'memory') {
+    } else if (commandName === 'imagine') {
       const prompt = interaction.options.getString('prompt');
       const aspect_ratio = interaction.options.getString('aspect_ratio') || 'Square';
       await interaction.deferReply();
@@ -150,7 +150,6 @@ client.on('interactionCreate', async interaction => {
           .setColor(0x36393F)
           .setDescription('`❌`› Image generation failed. Please try again later.')
           .setTimestamp();
-          
         await interaction.editReply({ embeds: [errorEmbed] });
       }
     }
