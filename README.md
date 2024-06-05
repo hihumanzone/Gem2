@@ -29,7 +29,7 @@ This is a Discord bot designed to utilize Google's Generative AI (Gemini 1.5-Fla
 2. **Install dependencies:**
 
     ```sh
-    npm install @google/generative-ai fs discord.js dotenv node-fetch@2.6.7 pdf-parse path
+    npm install @google/generative-ai fs discord.js dotenv node-fetch@2.6.7 pdf-parse path eventsource
     ```
 
 3. **Configure environment variables:**
