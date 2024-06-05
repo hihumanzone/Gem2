@@ -3,6 +3,7 @@ require('dotenv').config();
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fetch = require('node-fetch');
 const pdfParse = require('pdf-parse');
+const EventSource = require('eventsource');
 const fs = require('fs');
 const path = require('path');
 
@@ -62,6 +63,29 @@ client.on('ready', async () => {
     {
       name: 'memory',
       description: 'Displays the memory of conversations in the server.'
+    },
+    {
+      "name": "imagine",
+      "description": "Generate an image based on a prompt using a selected model.",
+      "options": [
+        {
+          "type": 3,
+          "name": "prompt",
+          "description": "The prompt to generate the image from.",
+          "required": true
+        },
+        {
+          "type": 3,
+          "name": "aspect_ratio",
+          "description": "The aspect ratio for the generated image.",
+          "required": false,
+          "choices": [
+            { "name": "Square", "value": "Square" },
+            { "name": "Landscape", "value": "Landscape" },
+            { "name": "Portrait", "value": "Portrait" }
+          ]
+        }
+      ]
     }
   ]);
 });
@@ -92,9 +116,46 @@ client.on('interactionCreate', async interaction => {
       } catch (error) {
         console.error(error);
       }
+    } else if (commandName === 'memory') {
+      const prompt = interaction.options.getString('prompt');
+      const aspect_ratio = interaction.options.getString('aspect_ratio') || 'Square';
+      await interaction.deferReply();
+      try {
+        const loadingEmbed = new EmbedBuilder()
+          .setColor(0x36393F)
+          .setDescription(`\`🔄\`› Generating image in ${aspect_ratio} aspect ratio...`)
+          .setTimestamp();
+        await interaction.editReply({ embeds: [loadingEmbed] });
+        const result = await retryOperation(generateImg(prompt, aspect_ratio), 3);
+        const imageUrl = result.images[0].url;
+        const imageAttachment = new AttachmentBuilder(imageUrl, { name: 'generated-image.png' });
+        const embed = new EmbedBuilder()
+          .setColor(0x36393F)
+          .addFields(
+            { name: 'Prompt:', value: `\`\`\`${prompt.length > 950 ? prompt.substring(0, 950) + '...' : prompt}\`\`\`` },
+            { name: 'Aspect Ratio:', value: `\`${aspect_ratio}\`` }
+            )
+          .setImage(`attachment://generated-image.png`)
+          .setTimestamp();
+        const imageMessage = await interaction.followUp({
+          content: `<@${interaction.user.id}>`,
+          embeds: [embed],
+          files: [imageAttachment]
+        });
+        const messageLink = `https://discord.com/channels/${interaction.guildId ? interaction.guildId : '@me'}/${interaction.channelId}/${imageMessage.id}`;
+        await interaction.editReply({ content: `\`✅\`› Image generation successful! ${messageLink}`, embeds: [] });
+      } catch (error) {
+        console.error(error);
+        const errorEmbed = new EmbedBuilder()
+          .setColor(0x36393F)
+          .setDescription('`❌`› Image generation failed. Please try again later.')
+          .setTimestamp();
+          
+        await interaction.editReply({ embeds: [errorEmbed] });
+      }
     }
   } catch (error) {
-    console.error(error);
+    console.error(error.message);
   }
 });
 
@@ -303,4 +364,99 @@ async function sendTextInChunks(text, message) {
     partCount++;
   }
 }
+
+function generateSessionHash() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = '';
+  for (let i = 0; i < 5; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+function generateRandomDigits() {
+  return Math.floor(Math.random() * (999999999 - 100000000 + 1) + 100000000);
+}
+
+function generateImg(prompt, aspect_ratio) {
+  let width, height;
+  if (aspect_ratio == 'Square') {
+    width = 1024;
+    height = 1024;
+  } else if (aspect_ratio == 'Landscape') {
+    width = 1280;
+    height = 768;
+  } else if (aspect_ratio == 'Portrait') {
+    width = 768;
+    height = 1280;
+  }
+  return new Promise(async (resolve, reject) => {
+    try {
+      const randomDigits = generateRandomDigits();
+      const sessionHash = generateSessionHash();
+
+      // First request to join the queue
+      await fetch("https://ehristoforu-dalle-3-xl-lora-v2.hf.space/queue/join?", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: [prompt, nevPrompt, true, randomDigits, width, height, 6, true],
+          event_data: null,
+          fn_index: 3,
+          trigger_id: 6,
+          session_hash: sessionHash
+        }),
+      });
+
+      // Replace this part to use EventSource for listening to the event stream
+      const es = new EventSource(`https://ehristoforu-dalle-3-xl-lora-v2.hf.space/queue/data?session_hash=${sessionHash}`);
+
+      es.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.msg === 'process_completed') {
+          es.close();
+          const outputUrl = data?.output?.data?.[0]?.[0]?.image?.url;
+          if (!outputUrl) {
+            reject(new Error("Output URL does not exist, path might be invalid."));
+            console.log(data);
+          } else {
+            resolve({ images: [{ url: outputUrl }]});
+          }
+        }
+      };
+
+      es.onerror = (error) => {
+        es.close();
+        reject(error);
+      };
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function retryOperation(fn, maxRetries, delayMs = 1000) {
+  let error;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      console.log(`Attempt ${attempt} failed: ${err.message}`);
+      error = err;
+      if (attempt < maxRetries) {
+        console.log(`Waiting ${delayMs}ms before next attempt...`);
+        await delay(delayMs);
+      } else {
+        console.log(`All ${maxRetries} attempts failed.`);
+      }
+    }
+  }
+
+  throw new Error(`Operation failed after ${maxRetries} attempts: ${error.message}`);
+}
+
 client.login(token);
