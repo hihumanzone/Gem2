@@ -126,7 +126,7 @@ client.on('interactionCreate', async interaction => {
           .setDescription(`\`🔄\`› Generating image in ${aspect_ratio} aspect ratio...`)
           .setTimestamp();
         await interaction.editReply({ embeds: [loadingEmbed] });
-        const result = await retryOperation(generateImg(prompt, aspect_ratio), 3);
+        const result = await retryOperation(() => generateImg(prompt, aspect_ratio), 3);
         const imageUrl = result.images[0].url;
         const imageAttachment = new AttachmentBuilder(imageUrl, { name: 'generated-image.png' });
         const embed = new EmbedBuilder()
