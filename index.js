@@ -399,7 +399,7 @@ function generateImg(prompt, aspect_ratio) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: [prompt, nevPrompt, true, randomDigits, width, height, 6, true],
+          data: [prompt, '', false, randomDigits, width, height, 6, true],
           event_data: null,
           fn_index: 3,
           trigger_id: 6,
