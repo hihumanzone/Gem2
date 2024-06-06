@@ -243,7 +243,7 @@ client.on('messageCreate', async message => {
             }
 
             const result = await chat.sendMessage(parts);
-            const response = await result.response();
+            const response = await result.response;
             let text = response.text();
 
             message.guild.members.cache.forEach(member => {
