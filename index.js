@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, AttachmentBuilder, InteractionType, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, AttachmentBuilder, InteractionType, EmbedBuilder, PermissionsBitField } = require('discord.js');
 require('dotenv').config();
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fetch = require('node-fetch');
@@ -163,137 +163,142 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.on('messageCreate', async message => {
+  if (message.author.id === client.user.id) return;
+  const botPermissions = message.channel.permissionsFor(message.guild.members.me);
+  if (!botPermissions || !botPermissions.has(PermissionsBitField.Flags.SendMessages)) return;
   try {
-    if ((message.mentions.has(client.user) && !message.mentions.everyone) ||
-        message.content.toLowerCase().includes(client.user.displayName.toLowerCase())) {
-      if (!message.author.bot) {
-        const retryAttempts = 3;
-        let retryCount = 0;
-        let success = false;
+    const retryAttempts = 3;
+    let retryCount = 0;
+    let success = false;
 
-        while (!success && retryCount < retryAttempts) {
-          try {
-            const history = serverHistory.get(message.guildId) || [];
-      
-            let member = await message.guild.members.fetch(message.author.id);
+    while (!success && retryCount < retryAttempts) {
+      try {
+        const history = serverHistory.get(message.guildId) || [];
+  
+        let member = await message.guild.members.fetch(message.author.id);
 
-            const userInfo = {
-              username: message.author.username,
-              displayName: message.author.displayName,
-              serverNickname: message.author.nickname,
-              status: member.presence ? member.presence.status : 'offline'
-            };
+        const userInfo = {
+          username: message.author.username,
+          displayName: message.author.displayName,
+          serverNickname: message.author.nickname,
+          status: member.presence ? member.presence.status : 'offline'
+        };
 
-            const now = new Date();
-            const utc = now.toUTCString();
+        const time = message.createdAt.toLocaleString();
 
-            const serverName = message.guild.name;
-            
-            const systemInstructions = `You are an AI known as ${client.user.displayName}. You are currently engaging with users in the ${serverName} Discord server. You will receive messages in the following format: "[Time: \`User\`'s message in the ChannelName channel]:". When responding, you do not need to follow this format. Avoid using emojis in your responses. You can mention users or redirect to channels by using '@username' or '#channelname'. You have the ability to see images and read text-based or PDF documents. You are mainly built as a conversational AI, but you can do other things as well. Be understanding, build friendships, and play along.\n\n## User Information\nUsername: \`${userInfo.username}\`\nDisplay Name: \`${userInfo.displayName}\`\nServer Nickname: \`${userInfo.serverNickname || 'Not set'}\`\nStatus: \`${userInfo.status}\``;
+        const serverName = message.guild.name;
+        
+        const systemInstructions = `You are a boy AI known as ${client.user.displayName}. You are currently engaging with users in the ${serverName} Discord server. You will receive all messages in the following format: "[Time: \`User\`'s message in the ChannelName channel].", respond to the ones that seem to be either calling you or continuing an existing conversation. You can also jump into conversations if you want, but don't do it, you might get overwhelmed, so just ignore most messages by sending a '.'. When responding, you do not need to follow this format. Avoid using emojis in your responses. You can mention users by using '@display name'. You can redirect to channels by using '#channelname'. You have the ability to see images and read text-based or PDF documents. You can send an "." to end a conversation or to avoid sending a response message on discord. You are mainly built as a conversational AI, but you can do other things as well. Be understanding, human-like, build friendships, and play along.\n\n## User Information\nUsername: \`${userInfo.username}\`\nDisplay Name: \`${userInfo.displayName}\`\nServer Nickname: \`${userInfo.serverNickname || 'Not set'}\`\nStatus: \`${userInfo.status}\``;
 
-            const model = genAI.getGenerativeModel({
-              model: 'gemini-1.5-flash',
-              systemInstruction: {
-                role: "system",
-                parts: [
-                  {
-                    text: systemInstructions
-                  }
-                ]
+        const model = genAI.getGenerativeModel({
+          model: 'gemini-1.5-flash',
+          systemInstruction: {
+            role: "system",
+            parts: [
+              {
+                text: systemInstructions
               }
-            });
-            const chat = model.startChat({ history: history });
-
-            let prompt = message.content;
-
-            // Escape regex special characters before creating a new RegExp
-            const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-            message.guild.members.cache.forEach(member => {
-              const displayNameEscaped = escapeRegex(member.displayName);
-              prompt = prompt.replace(new RegExp(`<@!?${member.id}>`, 'g'), `"@${displayNameEscaped}"`);
-            });
-
-            message.guild.channels.cache.forEach(channel => {
-              const channelNameEscaped = escapeRegex(channel.name);
-              prompt = prompt.replace(new RegExp(`<#${channel.id}>`, 'g'), `"#${channelNameEscaped}"`);
-            });
-
-            const channelName = message.channel.name;
-            prompt = `[\`${utc}\` :\`${userInfo.displayName}\`'s Message In #${channelName} Channel]: ${prompt}`;
-            prompt = await extractText(message, prompt);
-            let parts = [{ "text": prompt }];
-
-            if (message.attachments.size > 0) {
-              const attachmentParts = await Promise.all(
-                message.attachments
-                .filter(attachment => attachment.contentType && attachment.contentType.startsWith('image/'))
-                .map(async (attachment) => {
-                  const response = await fetch(attachment.url);
-                  const buffer = await response.buffer();
-                  return {
-                    inlineData: {
-                      data: buffer.toString('base64'),
-                      mimeType: attachment.contentType || 'application/octet-stream'
-                    }
-                  };
-                })
-              );
-              parts = [...parts, ...attachmentParts];
-            }
-
-            const result = await chat.sendMessage(parts);
-            const response = await result.response;
-            let text = response.text();
-
-            message.guild.members.cache.forEach(member => {
-              const displayNameEscaped = escapeRegex(member.displayName);
-              text = text.replace(new RegExp(`@${displayNameEscaped}`, 'g'), `<@${member.id}>`);
-            });
-
-            message.guild.channels.cache.forEach(channel => {
-              const channelNameEscaped = escapeRegex(channel.name);
-              text = text.replace(new RegExp(`#${channelNameEscaped}`, 'g'), `<#${channel.id}>`);
-            });
-
-            console.log(`\n${prompt}\nBot response: ${text}\n`);
-            serverHistory.set(message.guildId, history);
-            await saveServerHistory(message.guildId, history);
-
-            if (text.length > 1950) {
-              if (sendAsFile) {
-                await sendAsTextFile(text, message);
-              } else {
-                await sendTextInChunks(text, message);
-              }
-            } else {
-              await message.reply(text);
-            }
-            success = true;
-          } catch (retryError) {
-            retryCount++;
-            console.error(`Attempt ${retryCount} failed: ${retryError}`);
-            if (retryError.message && retryError.message.startsWith('[GoogleGenerativeAI Error]: Candidate was blocked due to')) {
-              const history = serverHistory.get(message.guildId) || [];
-              if (history.length >= 2) {
-                history.pop();
-                history.pop();
-                serverHistory.set(message.guildId, history);
-              }
-            }
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            ]
           }
+        });
+        const chat = model.startChat({ history: history });
+
+        let prompt = message.content;
+
+        const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        message.guild.members.cache.forEach(member => {
+          const displayNameEscaped = escapeRegex(member.displayName);
+          prompt = prompt.replace(new RegExp(`<@!?${member.id}>`, 'g'), `"@${displayNameEscaped}"`);
+        });
+
+        message.guild.channels.cache.forEach(channel => {
+          const channelNameEscaped = escapeRegex(channel.name);
+          prompt = prompt.replace(new RegExp(`<#${channel.id}>`, 'g'), `"#${channelNameEscaped}"`);
+        });
+
+        const channelName = message.channel.name;
+        prompt = `[\`${time}\` :\`${userInfo.displayName}\`'s Message In #${channelName} Channel]: ${prompt}`;
+        if (message.reference && message.reference.messageId) {
+          const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
+          const repliedUsername = repliedMessage.author.username;
+          const repliedDisplayName = repliedMessage.author.displayName;
+          const repliedTime = repliedMessage.createdAt.toLocaleString();
+          const repliedContent = repliedMessage.content;
+          prompt = prompt += `\n\n{REPLYING TO:\nUser: \`${repliedUsername}\` (Display Name: \`${repliedDisplayName}\`)\nTime: \`${repliedTime}\`\n[Message]: ${repliedContent}\n}`;
+        }
+        prompt = await extractText(message, prompt);
+        let parts = [{ "text": prompt }];
+
+        if (message.attachments.size > 0) {
+          const attachmentParts = await Promise.all(
+            message.attachments
+            .filter(attachment => attachment.contentType && attachment.contentType.startsWith('image/'))
+            .map(async (attachment) => {
+              const response = await fetch(attachment.url);
+              const buffer = await response.buffer();
+              return {
+                inlineData: {
+                  data: buffer.toString('base64'),
+                  mimeType: attachment.contentType || 'application/octet-stream'
+                }
+              };
+            })
+          );
+          parts = [...parts, ...attachmentParts];
         }
 
-        if (!success) {
-          console.error(`After ${retryAttempts} attempts, the operation failed.`);
+        const result = await chat.sendMessage(parts);
+        const response = await result.response;
+        let text = response.text();
+
+        message.guild.members.cache.forEach(member => {
+          const displayNameEscaped = escapeRegex(member.displayName);
+          text = text.replace(new RegExp(`@${displayNameEscaped}`, 'g'), `<@${member.id}>`);
+        });
+
+        message.guild.channels.cache.forEach(channel => {
+          const channelNameEscaped = escapeRegex(channel.name);
+          text = text.replace(new RegExp(`#${channelNameEscaped}`, 'g'), `<#${channel.id}>`);
+        });
+
+        serverHistory.set(message.guildId, history);
+        await saveServerHistory(message.guildId, history);
+
+        if (text.length > 1950) {
+          if (sendAsFile) {
+            await sendAsTextFile(text, message);
+          } else {
+            await sendTextInChunks(text, message);
+          }
+        } else if (text.trim() !== '.') {
+          await message.channel.send(text);
         }
+        success = true;
+      } catch (retryError) {
+        retryCount++;
+        console.error(`Attempt ${retryCount} failed: ${retryError}`);
+        if (retryError.message && retryError.message.startsWith('[GoogleGenerativeAI Error]: Candidate was blocked due to')) {
+          const history = serverHistory.get(message.guildId) || [];
+          if (history.length >= 2) {
+            history.pop();
+            history.pop();
+            serverHistory.set(message.guildId, history);
+          }
+          success = true;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
+    }
+
+    if (!success) {
+      console.error(`After ${retryAttempts} attempts, the operation failed.`);
     }
   } catch (err) {
     console.error('Failed to process message:', err);
   }
 });
+
 
 async function extractText(message, messageContent) {
   if (message.attachments.size > 0) {
